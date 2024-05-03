@@ -44,26 +44,15 @@ class ZerionClient:
             tx_hash = await w3.eth.send_raw_transaction(sign.rawTransaction)
             log.info(f'{wallet.address} | Mint Zerion DNA | Attempt {retry}/{NUMBER_OF_RETRIES} | '
                      f'Transaction sent')
-            tx_receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=150)
+            tx_receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
 
             if tx_receipt.status == 1:
-
                 log.success(f'{wallet.address} | Mint Zerion DNA | Attempt {retry}/{NUMBER_OF_RETRIES} | '
                             f'Transaction succeeded | {SCAN_URL}{w3.to_hex(tx_hash)}')
                 return True
 
             else:
-                log.error(f'{wallet.address()} | Mint Zerion DNA | Attempt {retry}/{NUMBER_OF_RETRIES} | '
-                          f'Transaction failed')
-                retry += 1
-
-                if retry > NUMBER_OF_RETRIES:
-                    log.critical(f'{wallet.address()} | Wallet failed after {NUMBER_OF_RETRIES} '
-                                 f'{"retries" if NUMBER_OF_RETRIES > 1 else "retry"}')
-                    return False
-
-                await asyncio.sleep(random.randint(*SLEEP_RANGE))
-                return await self.mint_zerion_dna(w3, wallet, retry)
+                raise Exception("Transaction failed")
 
         except Exception as error:
             log.error(f'{wallet.address()} | Mint Zerion DNA | Attempt {retry}/{NUMBER_OF_RETRIES} | '
