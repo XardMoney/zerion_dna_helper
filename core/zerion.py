@@ -1,4 +1,4 @@
-from core.config import *
+from core.config import GWEI_LIMIT, SLEEP_RANGE_FOR_GWEI_CHECKS, DNA_ADDRESS, NUMBER_OF_RETRIES, SCAN_URL, SLEEP_RANGE
 from utils.log import log
 import asyncio
 import random

@@ -1,4 +1,4 @@
-from settings import *
+from settings import SEMAPHORE_LIMIT, NUMBER_OF_RETRIES, SLEEP_RANGE, GWEI_LIMIT, SLEEP_RANGE_FOR_GWEI_CHECKS
 from web3 import Web3
 import asyncio
 
@@ -14,7 +14,7 @@ SLEEP_RANGE_FOR_GWEI_CHECKS = sorted(([max(int(x), 1) for x in SLEEP_RANGE_FOR_G
 
 FILE_LOCK = asyncio.Lock()
 
-NODE_URLS = ["https://ethereum.publicnode.com", "https://1rpc.io/eth", "https://rpc.ankr.com/eth"]
+RPC_URLS = ["https://ethereum.publicnode.com", "https://1rpc.io/eth", "https://rpc.ankr.com/eth"]
 
 SCAN_URL = "https://etherscan.io/tx/"
 
