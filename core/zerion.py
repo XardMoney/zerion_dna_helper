@@ -55,12 +55,12 @@ class ZerionClient:
                 raise Exception("Transaction failed")
 
         except Exception as error:
-            log.error(f'{wallet.address()} | Mint Zerion DNA | Attempt {retry}/{NUMBER_OF_RETRIES} | '
+            log.error(f'{wallet.address} | Mint Zerion DNA | Attempt {retry}/{NUMBER_OF_RETRIES} | '
                       f'Error: {error}')
             retry += 1
 
             if retry > NUMBER_OF_RETRIES:
-                log.critical(f'{wallet.address()} | Wallet failed after {NUMBER_OF_RETRIES} '
+                log.critical(f'{wallet.address} | Wallet failed after {NUMBER_OF_RETRIES} '
                              f'{"retries" if NUMBER_OF_RETRIES > 1 else "retry"}')
                 return False
 
