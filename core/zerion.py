@@ -1,68 +1,136 @@
-from core.config import GWEI_LIMIT, SLEEP_RANGE_FOR_GWEI_CHECKS, DNA_ADDRESS, NUMBER_OF_RETRIES, SCAN_URL, SLEEP_RANGE
-from utils.log import log
-import asyncio
+import json
 import random
 
+from core.client import Client
+from core.config import (AMOUNT_PERCENT, TOKENS_ZERION, ZERION_DNA_ABI, ZERION_DNA_ADDRESS)
+from utils.decorators import check_gas, retry
+from utils.log import Logger
 
-class ZerionClient:
 
-    def __init__(self):
-        pass
+class Zerion(Client, Logger):
+    def __init__(self, wallet_name, private_key, proxy, network):
+        Client.__init__(self, wallet_name, private_key, proxy, network)
+        Logger.__init__(self)
 
-    @staticmethod
-    async def check_gas(w3, wallet):
-        while True:
-            try:
-                gas = round(w3.from_wei(await w3.eth.gas_price, "gwei"), 1)
+    @retry
+    async def check_presence_of_dna(self):
+        msg = "Starting to check for the presence of the DNA"
+        self.log_msg(self.wallet_name, self.network.name, self.__class__.__name__,
+                     self.check_presence_of_dna.__name__, msg)
 
-                if gas <= GWEI_LIMIT:
-                    log.success(f'{wallet.address} | Check gas | GWEI: {gas} | Limit hasn\'t been exceeded')
-                    return True
+        contract = await self.get_contract(ZERION_DNA_ADDRESS, ZERION_DNA_ABI)
+        amount = await contract.functions.balanceOf(self.address).call()
+
+        if amount > 0:
+            msg = "DNA has already been minted"
+            self.log_msg(self.wallet_name, self.network.name, self.__class__.__name__,
+                         self.check_presence_of_dna.__name__, msg, "success")
+
+        else:
+            msg = "DNA hasn't minted yet"
+            self.log_msg(self.wallet_name, self.network.name, self.__class__.__name__,
+                         self.check_presence_of_dna.__name__, msg, "warning")
+
+        return amount
+
+    @retry
+    @check_gas
+    async def mint_dna(self):
+        msg = "Starting to mint the DNA"
+        self.log_msg(self.wallet_name, self.network.name, self.__class__.__name__, self.mint_dna.__name__, msg)
+        tx = {
+            "to": ZERION_DNA_ADDRESS,
+            "data": "0x1249c58b",
+        }
+        tx.update(await self.prepare_transaction())
+        tx_url = await self.send_transaction(tx)
+
+        if tx_url:
+            msg = f'Successfully minted the DNA: {tx_url}'
+            self.log_msg(self.wallet_name, self.network.name, self.__class__.__name__, self.mint_dna.__name__, msg,
+                         "success")
+            return True
+
+    async def get_auto_data_for_swap(self, from_token_name, to_token_name):
+        if from_token_name != self.network.token:
+            from_token_amount_in_wei = await self.get_token_balance(from_token_name)
+
+        else:
+            from_token_amount_in_wei = int(await self.get_token_balance(from_token_name) *
+                                           (random.uniform(*AMOUNT_PERCENT) / 100))
+
+        to_token_amount_in_wei = await self.get_token_balance(to_token_name)
+        return from_token_amount_in_wei, to_token_amount_in_wei
+
+    async def get_best_offer(self, from_token_name, to_token_name, from_token_amount_in_wei):
+        url = f'https://transactions.zerion.io/swap/quote/stream?' \
+              f'input_token={TOKENS_ZERION[from_token_name]}&' \
+              f'output_token={TOKENS_ZERION[to_token_name]}&' \
+              f'input_chain={self.network.input_chain_name}&' \
+              f'input_amount={from_token_amount_in_wei}&' \
+              f'slippage=0.1&' \
+              f'from={self.address}'
+
+        stream = {}
+
+        async with self.session.get(url=url) as response:
+            events = [line.strip().decode() async for line in response.content if line.strip()]
+
+        for i in range(0, len(events) - 1, 2):
+            event = events[i:i + 2]
+
+            if event[0].split(maxsplit=1)[1] == "update":
+
+                if "offer" in stream:
+                    stream["offer"] = max(stream["offer"], json.loads(event[1].split(maxsplit=1)[1])[0],
+                                          key=lambda offer: (offer["enough_balance"], offer["enough_allowance"],
+                                                             offer["output_amount_min"]))
 
                 else:
-                    log.warning(f'{wallet.address} | Check gas | GWEI: {gas} | Limit has been exceeded, waiting...')
-                    await asyncio.sleep(random.randint(*SLEEP_RANGE_FOR_GWEI_CHECKS))
+                    stream["offer"] = json.loads(event[1].split(maxsplit=1)[1])[0]
 
-            except Exception:
-                continue
+            elif event[0].split(maxsplit=1)[1] == "exception":
+                raise Exception(event[1].split(maxsplit=1)[1])
 
-    async def mint_zerion_dna(self, w3, wallet, retry=1):
-        await self.check_gas(w3, wallet)
-        try:
-            tx = {
-                "from": wallet.address,
-                "to": DNA_ADDRESS,
-                "value": 0,
-                "nonce": await w3.eth.get_transaction_count(wallet.address),
-                "data": "0x1249c58b",
-                "chainId": await w3.eth.chain_id,
-                "maxFeePerGas": int(await w3.eth.gas_price * 1.2),
-                "maxPriorityFeePerGas": int(await w3.eth.gas_price)
-            }
-            tx["gas"] = await w3.eth.estimate_gas(tx)
-            sign = wallet.sign_transaction(tx)
-            tx_hash = await w3.eth.send_raw_transaction(sign.rawTransaction)
-            log.info(f'{wallet.address} | Mint Zerion DNA | Attempt {retry}/{NUMBER_OF_RETRIES} | '
-                     f'Transaction sent')
-            tx_receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
+        if not ("offer" in stream):
+            raise Exception("No offers for swap")
 
-            if tx_receipt.status == 1:
-                log.success(f'{wallet.address} | Mint Zerion DNA | Attempt {retry}/{NUMBER_OF_RETRIES} | '
-                            f'Transaction succeeded | {SCAN_URL}{w3.to_hex(tx_hash)}')
-                return True
+        return stream["offer"]
 
-            else:
-                raise Exception("Transaction failed")
+    @retry
+    @check_gas
+    async def swap(self, from_token_name, to_token_name):
+        msg = f"Starting to swap {from_token_name} to {to_token_name}"
+        self.log_msg(self.wallet_name, self.network.name, self.__class__.__name__, self.swap.__name__, msg)
+        data = await self.get_auto_data_for_swap(from_token_name, to_token_name)
+        offer = await self.get_best_offer(from_token_name, to_token_name, data[0])
 
-        except Exception as error:
-            log.error(f'{wallet.address} | Mint Zerion DNA | Attempt {retry}/{NUMBER_OF_RETRIES} | '
-                      f'Error: {error}')
-            retry += 1
+        if not (offer["enough_allowance"]):
+            msg = f'Not enough allowance of {from_token_name}'
+            self.log_msg(self.wallet_name, self.network.name, self.__class__.__name__, self.swap.__name__, msg,
+                         "warning")
+            msg = f'Starting to approve {from_token_name}'
+            self.log_msg(self.wallet_name, self.network.name, self.__class__.__name__, self.swap.__name__, msg)
+            tx_url = await self.make_approve(from_token_name, offer["token_spender"])
+            msg = f'Successfully approved {from_token_name}: {tx_url}'
+            self.log_msg(self.wallet_name, self.network.name, self.__class__.__name__, self.swap.__name__, msg,
+                         "success")
+            offer = await self.get_best_offer(from_token_name, to_token_name, data[0])
 
-            if retry > NUMBER_OF_RETRIES:
-                log.critical(f'{wallet.address} | Wallet failed after {NUMBER_OF_RETRIES} '
-                             f'{"retries" if NUMBER_OF_RETRIES > 1 else "retry"}')
-                return False
-
-            await asyncio.sleep(random.randint(*SLEEP_RANGE))
-            return await self.mint_zerion_dna(w3, wallet, retry)
+        from_token_decimals = await self.get_decimals(from_token_name)
+        to_token_decimals = await self.get_decimals(to_token_name)
+        from_token_amount = round(int(offer["input_amount_max"]) / 10 ** from_token_decimals, 8)
+        to_token_amount = round(int(offer["output_amount_min"]) / 10 ** to_token_decimals, 8)
+        await self.price_impact_defender(from_token_name, to_token_name, from_token_amount, to_token_amount)
+        tx = {
+            "to": offer["token_spender"],
+            "data": offer["transaction"]["data"]
+        }
+        tx.update(await self.prepare_transaction(int(offer["transaction"]["value"])))
+        tx_url = await self.send_transaction(tx)
+        msg = f'Successfully swapped ' \
+              f'{from_token_amount} {from_token_name} to ' \
+              f'a minimum of {to_token_amount} {to_token_name}: {tx_url}'
+        self.log_msg(self.wallet_name, self.network.name, self.__class__.__name__, self.swap.__name__, msg,
+                     "success")
+        return True
