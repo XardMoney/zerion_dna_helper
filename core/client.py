@@ -39,7 +39,7 @@ class Client:
         self.contract = self.w3.eth.contract(ZERION_DNA_ADDRESS, abi=ZERION_DNA_ABI)
 
     @staticmethod
-    def get_error_message(error: Exception) -> Exception | str:
+    def get_error_message(error):
         try:
             if isinstance(error.args[0], dict):
                 error = error.args[0].get("message", error)
