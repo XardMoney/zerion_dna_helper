@@ -22,10 +22,10 @@ AMOUNT_PERCENT = sorted(([min(max(int(x), 1), 99) for x in ITERATIONS] * 2)[:2])
 SLIPPAGE = max(SLIPPAGE, 0.1)
 
 # Better to leave this parameter as it is
-GAS_PRICE_MULTIPLIER = 1.3
+GAS_PRICE_MULTIPLIER = 1.1
 
 # Better to leave this parameter as it is
-GAS_LIMIT_MULTIPLIER = 1.5
+GAS_LIMIT_MULTIPLIER = 1.1
 
 ZERION_DNA_ADDRESS = Web3.to_checksum_address("0x932261f9Fc8DA46C4a22e31B45c4De60623848bF")
 
